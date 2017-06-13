@@ -1,0 +1,6 @@
+---
+- hosts: influx
+  remote_user: user
+  become: yes
+  roles:
+    - influx

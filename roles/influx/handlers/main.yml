@@ -1,0 +1,18 @@
+---
+- name: restart telegraf
+  service: name=telegraf state=restarted
+
+- name: restart influxdb
+  service: name=influxdb state=restarted
+
+- name: restart chronograf
+  service: name=chronograf state=restarted
+
+- name: restart kapacitor
+  service: name=kapacitor state=restarted
+
+- name: restart grafana
+  service: name=grafana-server state=restarted
+
+- name: update apt-repos
+  apt: update_cache=yes
