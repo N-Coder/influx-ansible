@@ -1,0 +1,6 @@
+---
+# InfluxDB version channel to use (stable|unstable|nightly)
+influxdb_channel: stable
+
+# Grafana version channel to use (stable|unstable|nightly)
+grafana_channel: stable

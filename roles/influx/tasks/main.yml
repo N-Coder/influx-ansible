@@ -1,0 +1,126 @@
+---
+# Install Influx TICK stack
+  - name: Import Influx GPG signing key
+    apt_key: url=https://repos.influxdata.com/influxdb.key state=present
+
+  - name: Add Influx repository
+    apt_repository:
+      repo: 'deb https://repos.influxdata.com/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} {{ influxdb_channel }}'
+      state: present
+
+  - name: Install Influx packages
+    apt: name={{ item }} state=present update_cache=yes
+    with_items:
+     - influxdb
+     - telegraf
+     - chronograf
+     - kapacitor
+
+# Install Grafana
+  - name: Import package cloud GPG signing key
+    apt_key: url=https://packagecloud.io/gpg.key state=present
+
+  - name: Add Grafana repository
+    apt_repository:
+      repo: 'deb https://packagecloud.io/grafana/{{ grafana_channel }}/{{ ansible_distribution | lower }}/ {{ ansible_distribution_release }} main'
+      state: present
+
+  - name: Install Grafana packages
+    apt: name=grafana state=present update_cache=yes
+
+# Secure InfluxDB
+  - name: Creating Influx users
+    command: "influx -execute \"{{ item }}\""
+    with_items: # CREATE USER is idempotent, so no further checks needed
+      - CREATE USER admin WITH PASSWORD '{{ lookup('password', 'credentials/influxdb/admin length=15') }}' WITH ALL PRIVILEGES;
+      - CREATE USER telegraf WITH PASSWORD '{{ lookup('password', 'credentials/influxdb/kapacitor length=15') }}' WITH WRITE PRIVILEGES;
+      - CREATE USER chronograf WITH PASSWORD '{{ lookup('password', 'credentials/influxdb/kapacitor length=15') }}' WITH READ PRIVILEGES;
+      - CREATE USER kapacitor WITH PASSWORD '{{ lookup('password', 'credentials/influxdb/kapacitor length=15') }}' WITH ALL PRIVILEGES;
+      - CREATE USER grafana WITH PASSWORD '{{ lookup('password', 'credentials/influxdb/grafana length=15') }}' WITH READ PRIVILEGES;
+
+  - ini_file:
+      path: /etc/influxdb/influxdb.conf
+      section: http
+      option: auth-enabled
+      value: true
+
+  ## Authenticate Telegraf
+  - ini_file:
+      path: /etc/telegraf/telegraf.conf
+      section: outputs.influxdb
+      option: username
+      value: telegraf
+
+  - ini_file:
+      path: /etc/telegraf/telegraf.conf
+      section: outputs.influxdb
+      option: password
+      value: "{{ lookup('password', 'credentials/influxdb/telegraf length=15') }}"
+
+  ## TODO Authenticate Chronograf
+    # {{ lookup('password', 'credentials/influxdb/chronograf length=15') }}
+    # --influxdb-url=                         Location of your InfluxDB instance [$INFLUXDB_URL]
+    # --influxdb-username=                    Username for your InfluxDB instance [$INFLUXDB_USERNAME]
+    # --influxdb-password=                    Password for your InfluxDB instance [$INFLUXDB_PASSWORD]
+
+  ## Authenticate Kapacitor
+  - ini_file:
+      path: /etc/kapacitor/kapacitor.conf
+      section: influxdb
+      option: username
+      value: kapacitor
+
+  - ini_file:
+      path: /etc/kapacitor/kapacitor.conf
+      section: influxdb
+      option: password
+      value: "{{ lookup('password', 'credentials/influxdb/kapacitor length=15') }}"
+
+  ## Authenticate Grafana
+  - service: name=grafana-server state=started enabled=yes
+
+  - uri:
+      url: http://localhost:3000/api/datasources/name/InfluxDB
+    register: grafana_influxdb
+    failed_when: false
+    changed_when: false
+
+  - name: Enable InfluxDB Datasource
+    uri:
+      url: http://localhost:3000/api/datasources
+      method: POST
+      body:
+        name: "InfluxDB"
+        type: "InfluxDB"
+        url: "http://localhost:9090"
+        access: "proxy"
+        isDefault: true
+        username: "grafana"
+        password: "{{ lookup('password', 'credentials/influxdb/grafana length=15') }}"
+      status_code: 201
+      body_format: json
+    when: grafana_influxdb.status == 404
+
+# TODO Secure Grafana
+# TODO Secure Kapacitor
+  - ini_file:
+      path: /etc/kapacitor/kapacitor.conf
+      section: http
+      option: auth-enabled
+      value: true
+
+## TODO Authenticate Chronograf
+  # --kapacitor-url=                        Location of your Kapacitor instance [$KAPACITOR_URL]
+  # --kapacitor-username=                   Username of your Kapacitor instance [$KAPACITOR_USERNAME]
+  # --kapacitor-password=                   Password of your Kapacitor instance [$KAPACITOR_PASSWORD]
+
+
+# Start-up services
+  - name: Start the Influx services
+    service: name={{ item }} state=started enabled=yes
+    with_items:
+     - influxdb
+     - telegraf
+     - chronograf
+     - kapacitor
+     - grafana-server
